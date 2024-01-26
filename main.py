@@ -7,8 +7,12 @@ import sys
 import requests
 from tqdm import tqdm
 
+DynamicFlag = False
+NoPromptFlag = False
+
 
 def fetchID():
+    print("进入模拟浏览器流程，请确保同目录下有与 Chrome 版本相同的 chromedriver 文件")
     mobile_emulation = {
         "deviceMetrics": {
             "width": 720,
@@ -57,15 +61,23 @@ def download(id):
     type = data["type"]
     cnt = data["imgs"].__len__()
     print("表情数量：{}".format(cnt))
-    choice = input("脚本无法判断表情类型，请自行判断原表情是否为动态表情？（Y/N）")
+    if NoPromptFlag == False:
+        choice = input("脚本无法判断表情类型，请自行判断原表情是否为动态表情？（Y/N）")
+    else:
+        if DynamicFlag == True:
+            choice = "Y"
+        else:
+            choice = "N"
     if not os.path.exists(os.getcwd() + "/downloads"):
         os.mkdir(os.getcwd() + "/downloads")
     os.chdir(os.getcwd() + "/downloads")
-    if choice == "Y":
+    if choice == "Y" or choice == "y":
+        print("已选择下载动态表情")
         if not os.path.exists("[{}] {} (动态)".format(id, data["name"])):
             os.mkdir("[{}] {} (动态)".format(id, data["name"]))
         os.chdir("[{}] {} (动态)".format(id, data["name"]))
     else:
+        print("已选择下载静态表情")
         if not os.path.exists("[{}] {}".format(id, data["name"])):
             os.mkdir("[{}] {}".format(id, data["name"]))
         os.chdir("[{}] {}".format(id, data["name"]))
@@ -91,46 +103,97 @@ def download(id):
             # print("{} - {} {}".format(i["name"], i["id"], img.status_code))
             with open("{}.png".format(i["name"]), "wb") as f:
                 f.write(img.content)
+    print("下载完成！保存路径：{}".format(os.getcwd()))
 
 
 def check(id):
     infodataURI = "https://gxh.vip.qq.com/qqshow/admindata/comdata/vipEmoji_item_{}/xydata.json".format(
         id
     )
-    infodata = requests.get(infodataURI).json()["data"]
+    try:
+        infodataRAW = requests.get(infodataURI)
+        infodata = infodataRAW.json()["data"]
+    except Exception as e:
+        print("请求错误！" + str(e))
+        print(infodataRAW.status_code)
+        sys.exit()
     print(
         "[{}] {} - {}".format(
             id, infodata["baseInfo"][0]["name"], infodata["baseInfo"][0]["desc"]
         )
     )
     print("{}".format(infodata["baseInfo"][0]["tag"][0]))
-    choice = input("是否继续下载？（Y/N）")
-    if choice == "N":
-        return
-    elif choice == "Y":
+    if NoPromptFlag == False:
+        choiceFlag = False
+        choice = input("是否继续下载？（Y/N）")
+        while not choiceFlag:
+            if choice == "N" or choice == "n":
+                choiceFlag = True
+                return
+            elif choice == "Y" or choice == "y":
+                choiceFlag = True
+                download(id)
+            else:
+                choice = input("输入错误，请重新输入：（Y/N）")
+    else:
         download(id)
 
 
 if __name__ == "__main__":
-    print(
-        """
-QQ 表情商城下载工具 V1.1 By @wowjerry
+    id = -1
+    if len(sys.argv) == 2:
+        id = sys.argv[1]
+        try:
+            assert id.isdigit()
+        except AssertionError:
+            print("参数错误，退出...")
+            print("命令行使用方法：python main.py [表情 ID] [参数(--dynamic/--static)(可选)])")
+            sys.exit()
+        id = int(id)
+        print("已检测到参数，直接下载 ID {}".format(id))
+    elif len(sys.argv) == 3:
+        id = sys.argv[1]
+        try:
+            assert id.isdigit()
+        except AssertionError:
+            print("参数错误，退出...")
+            print("命令行使用方法：python main.py [表情 ID] [参数(--dynamic/--static)(可选)])")
+            sys.exit()
+        id = int(id)
+        if sys.argv[2] == "--dynamic":
+            print("已检测到参数，下载动态表情 ID {}".format(id))
+            DynamicFlag = True
+            NoPromptFlag = True
+        elif sys.argv[2] == "--static":
+            print("已检测到参数，下载静态表情 ID {}".format(id))
+            DynamicFlag = False
+            NoPromptFlag = True
+        else:
+            print("参数错误，退出...")
+            print("命令行使用方法：python main.py [表情 ID] [参数(--dynamic/--static)(可选)])")
+            sys.exit()
+    else:
+        print(
+            """
+QQ 表情商城下载工具 V1.2 By @wowjerry
 请选择操作：
 1. 调用 selenium 获取表情 ID（请保证同目录下有与 Chrome 版本相同的 chromedriver.exe 文件）
 2. 已知表情 ID，直接下载
+
+开源地址：https://github.com/abc1763613206/QQFaceHelper
+命令行使用方法： python main.py [表情 ID] [参数(--dynamic/--static)(可选)])
 """
-    )
-    id = -1
-    try:
-        choice = input("请输入操作序号：")
-    except Exception as e:
-        print(e)
-        sys.exit()
-    if choice == "1":
-        id = fetchID()
-    elif choice == "2":
-        id = input("请输入表情 ID：")
-    else:
-        print("输入错误，退出...")
-        sys.exit()
+        )
+        try:
+            choice = input("请输入操作序号：")
+        except Exception as e:
+            print(e)
+            sys.exit()
+        if choice == "1":
+            id = fetchID()
+        elif choice == "2":
+            id = input("请输入表情 ID：")
+        else:
+            print("输入错误，退出...")
+            sys.exit()
     check(id)
