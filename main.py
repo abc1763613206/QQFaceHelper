@@ -28,11 +28,10 @@ def fetchID():
         "userAgent": "Mozilla/5.0 (Linux; Android 13; 2206122SC Build/TKQ1.220829.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.86 MQQBrowser/6.2 TBS/046613 Mobile Safari/537.36 V1_AND_SQ_8.9.80_4614_YYB_D QQ/8.9.80.12440 NetType/WIFI WebP/0.3.0 AppId/537176868 Pixel/1080 StatusBarHeight/82 SimpleUISwitch/0 QQTheme/1000 StudyMode/0 CurrentMode/0 CurrentFontScale/1.0 GlobalDensityScale/1.0 AllowLandscape/false InMagicWin/0",
     }  # 8.9.80 QQ 自带 UA
     options = webdriver.ChromeOptions()
-    caps = webdriver.DesiredCapabilities.CHROME
-    caps["goog:loggingPrefs"] = {"performance": "ALL"}
+    options.set_capability("goog:loggingPrefs", {"browser": "ALL", "performance": "ALL"})
     options.add_experimental_option("mobileEmulation", mobile_emulation)
     # 正常 UA 情况下会跳转登录页，而不是二维码扫描页
-    driver = webdriver.Chrome(options=options, desired_capabilities=caps)
+    driver = webdriver.Chrome(options=options)
     driver.get(
         "https://zb.vip.qq.com/hybrid/emoticonmall/search?_wv=1027&appid=1"
     )  # QQ 表情商城搜索页
@@ -42,7 +41,7 @@ def fetchID():
         for i in dat:
             if "jsbridge://ui/openUrl?" in i["message"]:
                 txt = unquote(i["message"], "utf-8")
-                match = re.match('.*id=(\d+)"', txt)
+                match = re.match(r'.*id=(\d+)"', txt)
                 if match:
                     print("成功发现 ID " + match.group(1))
                     driver.quit()
@@ -58,20 +57,19 @@ def download(id):
     height = data["supportSize"][0]["Height"]
     width = data["supportSize"][0]["Width"]
     print("表情尺寸：{}x{}".format(width, height))
-    type = data["type"]
-    cnt = data["imgs"].__len__()
+    cnt = len(data["imgs"])
     print("表情数量：{}".format(cnt))
     if NoPromptFlag == False:
         choice = input("脚本无法判断表情类型，请自行判断原表情是否为动态表情？（Y/N）")
+        while choice.strip().lower() not in ("y", "n"):
+            choice = input("输入错误，请重新输入：（Y/N）")
+        is_dynamic = choice.strip().lower() == "y"
     else:
-        if DynamicFlag == True:
-            choice = "Y"
-        else:
-            choice = "N"
+        is_dynamic = DynamicFlag
     if not os.path.exists(os.getcwd() + "/downloads"):
         os.mkdir(os.getcwd() + "/downloads")
     os.chdir(os.getcwd() + "/downloads")
-    if choice == "Y" or choice == "y":
+    if is_dynamic:
         print("已选择下载动态表情")
         if not os.path.exists("[{}] {} (动态)".format(id, data["name"])):
             os.mkdir("[{}] {} (动态)".format(id, data["name"]))
@@ -82,8 +80,9 @@ def download(id):
             os.mkdir("[{}] {}".format(id, data["name"]))
         os.chdir("[{}] {}".format(id, data["name"]))
     plist = tqdm(data["imgs"])
-    for i in plist:
-        if choice == "Y":
+    for idx, i in enumerate(plist, start=1):
+        prefix = "{}. ".format(idx)
+        if is_dynamic:
             imgURI = (
                 "https://gxh.vip.qq.com/club/item/parcel/item/{}/{}/raw{}.gif".format(
                     i["id"][0:2], i["id"], height
@@ -91,7 +90,7 @@ def download(id):
             )
             img = requests.get(imgURI)
             # print("{} - {} {}".format(i["name"], i["id"], img.status_code))
-            with open("{}.gif".format(i["name"]), "wb") as f:
+            with open("{}{}.gif".format(prefix, i["name"]), "wb") as f:
                 f.write(img.content)
         else:
             imgURI = (
@@ -101,7 +100,7 @@ def download(id):
             )
             img = requests.get(imgURI)
             # print("{} - {} {}".format(i["name"], i["id"], img.status_code))
-            with open("{}.png".format(i["name"]), "wb") as f:
+            with open("{}{}.png".format(prefix, i["name"]), "wb") as f:
                 f.write(img.content)
     print("下载完成！保存路径：{}".format(os.getcwd()))
 
@@ -110,19 +109,27 @@ def check(id):
     infodataURI = "https://gxh.vip.qq.com/qqshow/admindata/comdata/vipEmoji_item_{}/xydata.json".format(
         id
     )
+    infodataRAW = None
     try:
         infodataRAW = requests.get(infodataURI)
+        if infodataRAW.status_code == 404:
+            print("check 接口返回 404，跳过信息获取，直接进行下载...")
+            download(id)
+            return
         infodata = infodataRAW.json()["data"]
     except Exception as e:
         print("请求错误！" + str(e))
-        print(infodataRAW.status_code)
+        if infodataRAW is not None:
+            print(infodataRAW.status_code)
         sys.exit()
     print(
         "[{}] {} - {}".format(
             id, infodata["baseInfo"][0]["name"], infodata["baseInfo"][0]["desc"]
         )
     )
-    print("{}".format(infodata["baseInfo"][0]["tag"][0]))
+    tags = infodata["baseInfo"][0].get("tag", [])
+    if tags:
+        print("{}".format(tags[0]))
     if NoPromptFlag == False:
         choiceFlag = False
         choice = input("是否继续下载？（Y/N）")
@@ -147,7 +154,7 @@ if __name__ == "__main__":
             assert id.isdigit()
         except AssertionError:
             print("参数错误，退出...")
-            print("命令行使用方法：python main.py [表情 ID] [参数(--dynamic/--static)(可选)])")
+            print("命令行使用方法：python main.py [表情 ID] [参数(--dynamic/--static)(可选)]")
             sys.exit()
         id = int(id)
         print("已检测到参数，直接下载 ID {}".format(id))
@@ -157,7 +164,7 @@ if __name__ == "__main__":
             assert id.isdigit()
         except AssertionError:
             print("参数错误，退出...")
-            print("命令行使用方法：python main.py [表情 ID] [参数(--dynamic/--static)(可选)])")
+            print("命令行使用方法：python main.py [表情 ID] [参数(--dynamic/--static)(可选)]")
             sys.exit()
         id = int(id)
         if sys.argv[2] == "--dynamic":
@@ -170,7 +177,7 @@ if __name__ == "__main__":
             NoPromptFlag = True
         else:
             print("参数错误，退出...")
-            print("命令行使用方法：python main.py [表情 ID] [参数(--dynamic/--static)(可选)])")
+            print("命令行使用方法：python main.py [表情 ID] [参数(--dynamic/--static)(可选)]")
             sys.exit()
     else:
         print(
@@ -197,3 +204,5 @@ QQ 表情商城下载工具 V1.2 By @wowjerry
             print("输入错误，退出...")
             sys.exit()
     check(id)
+
+
